@@ -113,9 +113,7 @@ export default function ManageWebsites() {
               title={website.label || website.domain}
               subtitle={website.label ? website.domain : undefined}
               icon={getGlobeIcon(website.id === activeWebsiteId)}
-              accessories={[
-                website.id === activeWebsiteId ? { tag: { value: "Active", color: Color.Green } } : {},
-              ]}
+              accessories={[website.id === activeWebsiteId ? { tag: { value: "Active", color: Color.Green } } : {}]}
               actions={
                 <ActionPanel>
                   <ActionPanel.Section>

@@ -56,7 +56,6 @@ export default function MenuBarStats() {
   const activeWebsite = currentWebsite ?? initialData?.activeWebsite ?? null;
   const timeRange = currentTimeRange ?? initialData?.timeRange ?? preferences.defaultTimeRange;
 
-  // Fetch stats with caching - data persists between menu opens
   const {
     data: stats,
     isLoading: isLoadingStats,

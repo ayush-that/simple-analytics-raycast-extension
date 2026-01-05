@@ -1,4 +1,4 @@
-# Simple Analytics
+# Simple Analytics Raycast Extension (Unofficial)
 
 ![Simple Analytics](metadata/simple-analytics-1.png)
 

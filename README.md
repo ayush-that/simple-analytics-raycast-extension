@@ -37,7 +37,7 @@ If your website statistics are private, you'll need an API key:
 - Click the menu bar icon to see detailed statistics
 - Use **Time Range** submenu to change the period
 - Use **Switch Website** to toggle between multiple sites
-- Press `Cmd + R` to refresh data
+- Press `⌘ + R` to refresh data
 
 ## Preferences
 

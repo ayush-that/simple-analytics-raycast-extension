@@ -56,7 +56,6 @@ export default function MenuBarStats() {
   const activeWebsite = currentWebsite ?? initialData?.activeWebsite ?? null;
   const timeRange = currentTimeRange ?? initialData?.timeRange ?? preferences.defaultTimeRange;
 
-  // Manual stats fetching for immediate UI updates
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -70,7 +69,7 @@ export default function MenuBarStats() {
 
     let cancelled = false;
     setIsLoadingStats(true);
-    setStats(null); // Clear immediately for instant feedback
+    setStats(null);
     setError(null);
 
     fetchStats({
@@ -137,25 +136,27 @@ export default function MenuBarStats() {
     return (
       <MenuBarExtra icon={Icons.chartBar} title="Setup" tooltip="Click to add a website">
         <MenuBarExtra.Item title="No websites configured" />
-        <MenuBarExtra.Separator />
-        <MenuBarExtra.Item
-          title="Add Website..."
-          icon={Icons.plus}
-          shortcut={{ modifiers: ["cmd"], key: "n" }}
-          onAction={handleManageWebsites}
-        />
+        <MenuBarExtra.Section>
+          <MenuBarExtra.Item
+            title="Add Website..."
+            icon={Icons.plus}
+            shortcut={{ modifiers: ["cmd"], key: "n" }}
+            onAction={handleManageWebsites}
+          />
+        </MenuBarExtra.Section>
       </MenuBarExtra>
     );
   }
 
   return (
     <MenuBarExtra icon={Icons.chartBar} title={title} tooltip={tooltip} isLoading={isLoading}>
-      <MenuBarExtra.Item
-        title={activeWebsite?.label || activeWebsite?.domain || "No website"}
-        subtitle={getTimeRangeLabel(timeRange)}
-        onAction={handleOpenDashboard}
-      />
-      <MenuBarExtra.Separator />
+      <MenuBarExtra.Section>
+        <MenuBarExtra.Item
+          title={activeWebsite?.label || activeWebsite?.domain || "No website"}
+          subtitle={getTimeRangeLabel(timeRange)}
+          onAction={handleOpenDashboard}
+        />
+      </MenuBarExtra.Section>
 
       {stats && (
         <>
@@ -216,71 +217,71 @@ export default function MenuBarStats() {
         </MenuBarExtra.Section>
       )}
 
-      <MenuBarExtra.Separator />
-
-      <MenuBarExtra.Submenu title="Time Range" icon={Icons.calendar}>
-        <MenuBarExtra.Item
-          title="Today"
-          icon={timeRange === "today" ? Icons.check : undefined}
-          onAction={() => handleSetTimeRange("today")}
-        />
-        <MenuBarExtra.Item
-          title="Last 7 Days"
-          icon={timeRange === "7d" ? Icons.check : undefined}
-          onAction={() => handleSetTimeRange("7d")}
-        />
-        <MenuBarExtra.Item
-          title="Last 30 Days"
-          icon={timeRange === "30d" ? Icons.check : undefined}
-          onAction={() => handleSetTimeRange("30d")}
-        />
-      </MenuBarExtra.Submenu>
-
-      {websites.length > 1 && (
-        <MenuBarExtra.Submenu title="Switch Website" icon={Icons.globe}>
-          {websites.map((website) => (
-            <MenuBarExtra.Item
-              key={website.id}
-              title={website.label || website.domain}
-              icon={website.id === activeWebsite?.id ? Icons.check : undefined}
-              onAction={() => handleSwitchWebsite(website)}
-            />
-          ))}
+      <MenuBarExtra.Section>
+        <MenuBarExtra.Submenu title="Time Range" icon={Icons.calendar}>
+          <MenuBarExtra.Item
+            title="Today"
+            icon={timeRange === "today" ? Icons.check : undefined}
+            onAction={() => handleSetTimeRange("today")}
+          />
+          <MenuBarExtra.Item
+            title="Last 7 Days"
+            icon={timeRange === "7d" ? Icons.check : undefined}
+            onAction={() => handleSetTimeRange("7d")}
+          />
+          <MenuBarExtra.Item
+            title="Last 30 Days"
+            icon={timeRange === "30d" ? Icons.check : undefined}
+            onAction={() => handleSetTimeRange("30d")}
+          />
         </MenuBarExtra.Submenu>
-      )}
 
-      <MenuBarExtra.Separator />
+        {websites.length > 1 && (
+          <MenuBarExtra.Submenu title="Switch Website" icon={Icons.globe}>
+            {websites.map((website) => (
+              <MenuBarExtra.Item
+                key={website.id}
+                title={website.label || website.domain}
+                icon={website.id === activeWebsite?.id ? Icons.check : undefined}
+                onAction={() => handleSwitchWebsite(website)}
+              />
+            ))}
+          </MenuBarExtra.Submenu>
+        )}
+      </MenuBarExtra.Section>
 
-      <MenuBarExtra.Item
-        title="Refresh"
-        icon={Icons.refresh}
-        shortcut={{ modifiers: ["cmd"], key: "r" }}
-        onAction={handleRefresh}
-      />
-
-      <MenuBarExtra.Separator />
-
-      <MenuBarExtra.Item
-        title="Open Dashboard"
-        icon={Icons.globe}
-        shortcut={{ modifiers: ["cmd"], key: "o" }}
-        onAction={handleOpenDashboard}
-      />
-      {websites.length > 1 && (
+      <MenuBarExtra.Section>
         <MenuBarExtra.Item
-          title="Next Website"
-          icon={Icons.arrowRight}
-          shortcut={{ modifiers: ["cmd"], key: "." }}
-          onAction={handleCycleWebsite}
+          title="Refresh"
+          icon={Icons.refresh}
+          shortcut={{ modifiers: ["cmd"], key: "r" }}
+          onAction={handleRefresh}
         />
-      )}
-      <MenuBarExtra.Item
-        title="Manage Websites..."
-        icon={Icons.settings}
-        shortcut={{ modifiers: ["cmd"], key: "," }}
-        onAction={handleManageWebsites}
-      />
-      <MenuBarExtra.Item title="Preferences..." icon={Icons.settings} onAction={openCommandPreferences} />
+      </MenuBarExtra.Section>
+
+      <MenuBarExtra.Section>
+        <MenuBarExtra.Item
+          title="Open Dashboard"
+          icon={Icons.globe}
+          shortcut={{ modifiers: ["cmd"], key: "o" }}
+          onAction={handleOpenDashboard}
+        />
+        {websites.length > 1 && (
+          <MenuBarExtra.Item
+            title="Next Website"
+            icon={Icons.arrowRight}
+            shortcut={{ modifiers: ["cmd"], key: "." }}
+            onAction={handleCycleWebsite}
+          />
+        )}
+        <MenuBarExtra.Item
+          title="Manage Websites..."
+          icon={Icons.settings}
+          shortcut={{ modifiers: ["cmd"], key: "," }}
+          onAction={handleManageWebsites}
+        />
+        <MenuBarExtra.Item title="Preferences..." icon={Icons.settings} onAction={openCommandPreferences} />
+      </MenuBarExtra.Section>
     </MenuBarExtra>
   );
 }

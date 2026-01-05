@@ -1,5 +1,7 @@
 # Simple Analytics
 
+![Simple Analytics](metadata/simple-analytics-1.png)
+
 View your [Simple Analytics](https://simpleanalytics.com) website statistics directly in your macOS menu bar.
 
 ## Features

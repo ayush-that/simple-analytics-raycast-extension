@@ -29,8 +29,6 @@ const Icons = {
   check: { source: "check.svg" },
   pencil: { source: "pencil.svg" },
   trash: { source: "trash.svg" },
-  lock: { source: "lock.svg" },
-  lockOpen: { source: "lock-open.svg" },
   wifi: { source: "wifi.svg" },
 };
 
@@ -115,12 +113,7 @@ export default function ManageWebsites() {
               title={website.label || website.domain}
               subtitle={website.label ? website.domain : undefined}
               icon={getGlobeIcon(website.id === activeWebsiteId)}
-              accessories={[
-                website.apiKey
-                  ? { icon: Icons.lock, tooltip: "Private (API key)" }
-                  : { icon: Icons.lockOpen, tooltip: "Public" },
-                website.id === activeWebsiteId ? { tag: { value: "Active", color: Color.Green } } : {},
-              ]}
+              accessories={[website.id === activeWebsiteId ? { tag: { value: "Active", color: Color.Green } } : {}]}
               actions={
                 <ActionPanel>
                   <ActionPanel.Section>

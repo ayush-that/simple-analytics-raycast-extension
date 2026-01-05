@@ -16,7 +16,7 @@
       "title": "Website Stats",
       "description": "Display website statistics in the menu bar",
       "mode": "menu-bar",
-      "interval": "1m"
+      "interval": "10s"
     },
     {
       "name": "manage-websites",

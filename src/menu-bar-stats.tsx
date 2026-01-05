@@ -7,8 +7,7 @@ import {
   LaunchType,
   showHUD,
 } from "@raycast/api";
-import { useCachedPromise } from "@raycast/utils";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { fetchStats, getDashboardUrl } from "./lib/api";
 import {
   getActiveWebsite,
@@ -36,60 +35,246 @@ const Icons = {
   alertCircle: { source: "alert-circle.svg" },
 };
 
+// Cache structure for all websites' stats
+interface WebsiteStats {
+  stats: StatsResponse | null;
+  error: Error | null;
+  loading: boolean;
+}
+
+interface StatsCache {
+  [websiteId: string]: WebsiteStats;
+}
+
+// Module-level cache that persists between menu opens
+let globalStatsCache: StatsCache = {};
+let globalCacheTimeRange: TimeRange | null = null;
+let globalIsFetching: boolean = false;
+let globalInitialData: {
+  websites: Website[];
+  activeWebsite: Website | null;
+  timeRange: TimeRange;
+} | null = null;
+
+// Auto-refresh interval: 1 minute
+const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
+
 async function loadInitialData() {
   const [websites, activeWebsite, timeRange] = await Promise.all([getWebsites(), getActiveWebsite(), getTimeRange()]);
   return { websites, activeWebsite, timeRange };
 }
 
+// Track what the stored state was last time we checked
+let lastStoredActiveId: string | null = null;
+let lastStoredWebsiteCount: number = 0;
+
 export default function MenuBarStats() {
   const preferences = getPreferenceValues<Preferences>();
   const [currentTimeRange, setCurrentTimeRange] = useState<TimeRange | null>(null);
   const [currentWebsite, setCurrentWebsite] = useState<Website | null>(null);
+  // Initialize from global cache to persist between menu opens - use function to avoid recreation
+  const [statsCache, setStatsCache] = useState<StatsCache>(() => globalStatsCache);
 
-  const {
-    data: initialData,
-    isLoading: isLoadingInitial,
-    revalidate: revalidateInitial,
-  } = useCachedPromise(loadInitialData);
+  // Initial data state - initialize from global cache if available
+  const [initialData, setInitialData] = useState<{
+    websites: Website[];
+    activeWebsite: Website | null;
+    timeRange: TimeRange;
+  } | null>(() => globalInitialData);
+
+  // Only show loading if we have NO cached data at all
+  const hasAnyCachedData = Object.keys(globalStatsCache).length > 0 && globalInitialData !== null;
+  const [isLoadingInitial, setIsLoadingInitial] = useState(!hasAnyCachedData);
+
+  // Track if we're doing a background refresh (don't show loading indicator)
+  const isBackgroundRefresh = useRef(false);
+
+  // Load initial data from storage
+  const revalidateInitial = useCallback(async (isBackground = false) => {
+    isBackgroundRefresh.current = isBackground;
+    const data = await loadInitialData();
+    globalInitialData = data;
+    setInitialData(data);
+    setIsLoadingInitial(false);
+    lastStoredActiveId = data.activeWebsite?.id ?? null;
+    lastStoredWebsiteCount = data.websites.length;
+    return data;
+  }, []);
+
+  // Load on mount - only if we don't have cached data
+  useEffect(() => {
+    if (!globalInitialData) {
+      revalidateInitial(false);
+    } else {
+      // We have cached data, just sync state
+      setInitialData(globalInitialData);
+      setIsLoadingInitial(false);
+      lastStoredActiveId = globalInitialData.activeWebsite?.id ?? null;
+      lastStoredWebsiteCount = globalInitialData.websites.length;
+    }
+  }, [revalidateInitial]);
+
+  // Poll storage every 2 seconds to sync with Manage Websites changes (reduced frequency)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const data = await loadInitialData();
+      const storedActiveId = data.activeWebsite?.id ?? null;
+      const websiteCountChanged = data.websites.length !== lastStoredWebsiteCount;
+      const activeChanged = storedActiveId !== lastStoredActiveId;
+
+      // Update if storage changed (active website or website list)
+      if (activeChanged || websiteCountChanged) {
+        globalInitialData = data;
+        setInitialData(data);
+        if (activeChanged) {
+          setCurrentWebsite(null); // Reset local override
+        }
+        // Sync stats cache state with any new data
+        setStatsCache(globalStatsCache);
+      }
+      lastStoredActiveId = storedActiveId;
+      lastStoredWebsiteCount = data.websites.length;
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   const websites = initialData?.websites ?? [];
   const activeWebsite = currentWebsite ?? initialData?.activeWebsite ?? null;
   const timeRange = currentTimeRange ?? initialData?.timeRange ?? preferences.defaultTimeRange;
 
-  // Fetch stats with caching - data persists between menu opens
-  const {
-    data: stats,
-    isLoading: isLoadingStats,
-    error,
-    revalidate: revalidateStats,
-  } = useCachedPromise(
-    async (website: Website | null, range: TimeRange) => {
-      if (!website) return null;
-      return fetchStats({
-        domain: website.domain,
-        apiKey: website.apiKey,
-        timeRange: range,
+  // Fetch stats for ALL websites in parallel (silently in background)
+  const fetchAllWebsites = useCallback(async (sites: Website[], range: TimeRange, isBackgroundFetch = false) => {
+    if (sites.length === 0) return;
+    if (globalIsFetching) return;
+
+    globalIsFetching = true;
+    globalCacheTimeRange = range;
+
+    // For background fetches, DON'T update loading state - keep showing existing stats
+    if (!isBackgroundFetch) {
+      // Only mark as loading if we don't have existing stats
+      const loadingCache: StatsCache = {};
+      sites.forEach((site) => {
+        const existingStats = globalStatsCache[site.id]?.stats ?? null;
+        loadingCache[site.id] = {
+          stats: existingStats,
+          error: null,
+          loading: existingStats === null, // Only show loading if no existing data
+        };
       });
-    },
-    [activeWebsite, timeRange],
-    {
-      execute: !!activeWebsite,
-      keepPreviousData: true, // Show cached data immediately
+      globalStatsCache = loadingCache;
+      setStatsCache(loadingCache);
     }
-  );
 
-  const isLoading = isLoadingInitial || isLoadingStats;
+    // Fetch all websites in parallel
+    const results = await Promise.allSettled(
+      sites.map(async (website) => {
+        const data = await fetchStats({
+          domain: website.domain,
+          apiKey: website.apiKey,
+          timeRange: range,
+        });
+        return { id: website.id, data };
+      })
+    );
 
+    // Update cache with results
+    const updatedCache: StatsCache = {};
+    results.forEach((result, index) => {
+      const websiteId = sites[index].id;
+      if (result.status === "fulfilled") {
+        updatedCache[websiteId] = {
+          stats: result.value.data,
+          error: null,
+          loading: false,
+        };
+      } else {
+        // On error, keep existing stats if available
+        const existingStats = globalStatsCache[websiteId]?.stats ?? null;
+        updatedCache[websiteId] = {
+          stats: existingStats,
+          error: result.reason instanceof Error ? result.reason : new Error("Failed to fetch"),
+          loading: false,
+        };
+      }
+    });
+
+    globalStatsCache = updatedCache;
+    setStatsCache(updatedCache);
+    globalIsFetching = false;
+  }, []);
+
+  // Fetch all websites when list loads or time range changes
+  // But skip if we already have cached data for this time range
+  useEffect(() => {
+    // Wait for initial data to be ready
+    if (!initialData || websites.length === 0) return;
+
+    // Check if we have valid cached data for all websites with current time range
+    const hasValidCache =
+      globalCacheTimeRange === timeRange && websites.every((site) => globalStatsCache[site.id]?.stats != null);
+
+    if (!hasValidCache) {
+      fetchAllWebsites(websites, timeRange, false);
+    }
+  }, [initialData, websites.length, timeRange, fetchAllWebsites]);
+
+  // Auto-refresh every 1 minute (background refresh - no loading indicator)
+  useEffect(() => {
+    if (!initialData || websites.length === 0) return;
+
+    const interval = setInterval(() => {
+      // Only refresh if not currently fetching
+      if (!globalIsFetching) {
+        fetchAllWebsites(websites, timeRange, true);
+      }
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [initialData, websites, timeRange, fetchAllWebsites]);
+
+  // Get current website's stats from cache - INSTANT lookup!
+  // First try React state, then fall back to global cache for immediate access
+  const currentWebsiteStats = activeWebsite
+    ? (statsCache[activeWebsite.id] ?? globalStatsCache[activeWebsite.id])
+    : null;
+  const stats = currentWebsiteStats?.stats ?? null;
+  const error = currentWebsiteStats?.error ?? null;
+
+  // Only show loading if we have NO stats at all (first load ever)
+  // Never show loading when we have cached data
+  const isLoading = isLoadingInitial && !stats;
+
+  // Switch website - INSTANT because stats are pre-fetched
+  const handleSwitchWebsite = useCallback((website: Website) => {
+    setCurrentWebsite(website);
+    setActiveWebsiteId(website.id); // Save in background
+  }, []);
+
+  // Change time range - triggers refetch of all websites
+  const handleSetTimeRange = useCallback((range: TimeRange) => {
+    setCurrentTimeRange(range);
+    saveTimeRange(range); // Save in background
+  }, []);
+
+  // Cycle to next website
   const handleCycleWebsite = useCallback(async () => {
     const nextWebsite = await cycleToNextWebsite();
-    setCurrentWebsite(nextWebsite);
-    await showHUD(`Switched to ${nextWebsite?.label || nextWebsite?.domain || "website"}`);
+    if (nextWebsite) {
+      setCurrentWebsite(nextWebsite);
+      showHUD(`Switched to ${nextWebsite.label || nextWebsite.domain}`);
+    }
   }, []);
 
-  const handleSetTimeRange = useCallback(async (range: TimeRange) => {
-    await saveTimeRange(range);
-    setCurrentTimeRange(range);
-  }, []);
+  // Refresh all websites (manual refresh - but still keep showing existing stats)
+  const handleRefresh = useCallback(() => {
+    revalidateInitial(true);
+    if (websites.length > 0) {
+      globalIsFetching = false; // Reset to allow refetch
+      // Use background fetch to not show loading state
+      fetchAllWebsites(websites, timeRange, true);
+    }
+  }, [revalidateInitial, websites, timeRange, fetchAllWebsites]);
 
   const handleOpenDashboard = useCallback(() => {
     if (activeWebsite) {
@@ -101,19 +286,11 @@ export default function MenuBarStats() {
     await launchCommand({ name: "manage-websites", type: LaunchType.UserInitiated });
   }, []);
 
-  const handleSwitchWebsite = useCallback(async (website: Website) => {
-    await setActiveWebsiteId(website.id);
-    setCurrentWebsite(website);
-  }, []);
-
-  const handleRefresh = useCallback(() => {
-    revalidateInitial();
-    revalidateStats();
-  }, [revalidateInitial, revalidateStats]);
-
+  // Build display strings
   const title = buildMenuBarTitle(stats, preferences, isLoading, error, activeWebsite);
   const tooltip = buildTooltip(activeWebsite, timeRange, stats);
 
+  // No websites configured
   if (!isLoadingInitial && websites.length === 0) {
     return (
       <MenuBarExtra icon={Icons.chartBar} title="Setup" tooltip="Click to add a website">
@@ -130,10 +307,11 @@ export default function MenuBarStats() {
     );
   }
 
-  const showLoading = isLoading && !stats;
+  // Never show loading spinner if we have stats - only on first load ever
+  const showLoadingIndicator = isLoading;
 
   return (
-    <MenuBarExtra icon={Icons.chartBar} title={title} tooltip={tooltip} isLoading={showLoading}>
+    <MenuBarExtra icon={Icons.chartBar} title={title} tooltip={tooltip} isLoading={showLoadingIndicator}>
       <MenuBarExtra.Section>
         <MenuBarExtra.Item
           title={activeWebsite?.label || activeWebsite?.domain || "No website"}
@@ -194,7 +372,7 @@ export default function MenuBarStats() {
         </>
       )}
 
-      {error && (
+      {error && !stats && (
         <MenuBarExtra.Section>
           <MenuBarExtra.Item title="Error loading stats" icon={Icons.alertCircle} />
           <MenuBarExtra.Item title={error.message} />
@@ -285,7 +463,7 @@ function buildMenuBarTitle(
     return "...";
   }
 
-  if (error) {
+  if (error && !stats) {
     return "!";
   }
 

@@ -38,13 +38,13 @@ export function getDateRange(range: TimeRange): { start: string; end: string } {
 export function getTimeRangeLabel(range: TimeRange): string {
   switch (range) {
     case "today":
-      return "Today";
+      return "Last 24 hours";
     case "7d":
       return "Last 7 days";
     case "30d":
       return "Last 30 days";
     default:
-      return "Today";
+      return "Last 24 hours";
   }
 }
 

@@ -8,7 +8,7 @@ import {
   showHUD,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { fetchStats, getDashboardUrl } from "./lib/api";
 import {
   getActiveWebsite,
@@ -56,45 +56,27 @@ export default function MenuBarStats() {
   const activeWebsite = currentWebsite ?? initialData?.activeWebsite ?? null;
   const timeRange = currentTimeRange ?? initialData?.timeRange ?? preferences.defaultTimeRange;
 
-  const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [fetchKey, setFetchKey] = useState(0);
-
-  useEffect(() => {
-    if (!activeWebsite) {
-      setStats(null);
-      return;
-    }
-
-    let cancelled = false;
-    setIsLoadingStats(true);
-    setStats(null);
-    setError(null);
-
-    fetchStats({
-      domain: activeWebsite.domain,
-      apiKey: activeWebsite.apiKey,
-      timeRange: timeRange,
-    })
-      .then((data) => {
-        if (!cancelled) setStats(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingStats(false);
+  // Fetch stats with caching - data persists between menu opens
+  const {
+    data: stats,
+    isLoading: isLoadingStats,
+    error,
+    revalidate: revalidateStats,
+  } = useCachedPromise(
+    async (website: Website | null, range: TimeRange) => {
+      if (!website) return null;
+      return fetchStats({
+        domain: website.domain,
+        apiKey: website.apiKey,
+        timeRange: range,
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeWebsite?.id, timeRange, fetchKey]);
-
-  const revalidateStats = useCallback(() => {
-    setFetchKey((k) => k + 1);
-  }, []);
+    },
+    [activeWebsite, timeRange],
+    {
+      execute: !!activeWebsite,
+      keepPreviousData: true, // Show cached data immediately
+    }
+  );
 
   const isLoading = isLoadingInitial || isLoadingStats;
 
@@ -148,8 +130,10 @@ export default function MenuBarStats() {
     );
   }
 
+  const showLoading = isLoading && !stats;
+
   return (
-    <MenuBarExtra icon={Icons.chartBar} title={title} tooltip={tooltip} isLoading={isLoading}>
+    <MenuBarExtra icon={Icons.chartBar} title={title} tooltip={tooltip} isLoading={showLoading}>
       <MenuBarExtra.Section>
         <MenuBarExtra.Item
           title={activeWebsite?.label || activeWebsite?.domain || "No website"}
@@ -220,7 +204,7 @@ export default function MenuBarStats() {
       <MenuBarExtra.Section>
         <MenuBarExtra.Submenu title="Time Range" icon={Icons.calendar}>
           <MenuBarExtra.Item
-            title="Today"
+            title="Last 24 Hours"
             icon={timeRange === "today" ? Icons.check : undefined}
             onAction={() => handleSetTimeRange("today")}
           />

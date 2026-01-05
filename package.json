@@ -57,7 +57,7 @@
       "default": "today",
       "data": [
         {
-          "title": "Today",
+          "title": "Last 24 Hours",
           "value": "today"
         },
         {

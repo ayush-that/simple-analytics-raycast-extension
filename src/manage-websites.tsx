@@ -10,6 +10,7 @@ import {
   Alert,
   Color,
   Image,
+  openExtensionPreferences,
 } from "@raycast/api";
 import { useState, useEffect } from "react";
 import { Website } from "./lib/types";
@@ -20,17 +21,10 @@ import {
   removeWebsite,
   getActiveWebsiteId,
   setActiveWebsiteId,
+  importWebsites,
 } from "./lib/storage";
-import { testConnection, getDashboardUrl } from "./lib/api";
-
-const Icons = {
-  globe: { source: "globe.svg" },
-  plus: { source: "plus.svg" },
-  check: { source: "check.svg" },
-  pencil: { source: "pencil.svg" },
-  trash: { source: "trash.svg" },
-  wifi: { source: "wifi.svg" },
-};
+import { testConnection, getDashboardUrl, fetchWebsitesFromAPI, MissingCredentialsError } from "./lib/api";
+import { Icons } from "./lib/icons";
 
 function getGlobeIcon(isActive: boolean): Image.ImageLike {
   return {
@@ -88,6 +82,51 @@ export default function ManageWebsites() {
     }
   }
 
+  async function handleImportFromAPI() {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Importing websites...",
+    });
+
+    try {
+      const apiWebsites = await fetchWebsitesFromAPI();
+      const domains = apiWebsites.map((w) => w.hostname);
+      const { added, skipped } = await importWebsites(domains);
+
+      if (added === 0 && skipped === 0) {
+        toast.style = Toast.Style.Success;
+        toast.title = "No websites found";
+        toast.message = "Your Simple Analytics account has no websites";
+      } else if (added === 0) {
+        toast.style = Toast.Style.Success;
+        toast.title = "All websites already added";
+        toast.message = `${skipped} website${skipped !== 1 ? "s" : ""} skipped`;
+      } else {
+        toast.style = Toast.Style.Success;
+        toast.title = `Imported ${added} website${added !== 1 ? "s" : ""}`;
+        if (skipped > 0) {
+          toast.message = `${skipped} already existed`;
+        }
+      }
+
+      await loadWebsites();
+    } catch (error) {
+      if (error instanceof MissingCredentialsError) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Credentials required";
+        toast.message = "Set API Key and User ID in preferences";
+        toast.primaryAction = {
+          title: "Open Preferences",
+          onAction: () => openExtensionPreferences(),
+        };
+      } else {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Import failed";
+        toast.message = error instanceof Error ? error.message : "Unknown error";
+      }
+    }
+  }
+
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Search websites...">
       {websites.length === 0 && !isLoading ? (
@@ -102,6 +141,7 @@ export default function ManageWebsites() {
                 icon={Icons.plus}
                 onAction={() => push(<AddWebsiteForm onSuccess={loadWebsites} />)}
               />
+              <Action title="Import from Simple Analytics" icon={Icons.download} onAction={handleImportFromAPI} />
             </ActionPanel>
           }
         />
@@ -138,7 +178,7 @@ export default function ManageWebsites() {
                           style: Toast.Style.Animated,
                           title: "Testing connection...",
                         });
-                        const result = await testConnection(website.domain, website.apiKey);
+                        const result = await testConnection(website.domain);
                         if (result.success) {
                           toast.style = Toast.Style.Success;
                           toast.title = "Connection successful";
@@ -156,6 +196,12 @@ export default function ManageWebsites() {
                       icon={Icons.plus}
                       shortcut={{ modifiers: ["cmd"], key: "n" }}
                       onAction={() => push(<AddWebsiteForm onSuccess={loadWebsites} />)}
+                    />
+                    <Action
+                      title="Import from Simple Analytics"
+                      icon={Icons.download}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "i" }}
+                      onAction={handleImportFromAPI}
                     />
                     <Action
                       title="Delete Website"
@@ -184,7 +230,7 @@ function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [domainError, setDomainError] = useState<string | undefined>();
 
-  async function handleSubmit(values: { domain: string; apiKey: string; label: string }) {
+  async function handleSubmit(values: { domain: string; label: string }) {
     const domain = values.domain
       .trim()
       .toLowerCase()
@@ -203,7 +249,7 @@ function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
       title: "Testing connection...",
     });
 
-    const result = await testConnection(domain, values.apiKey || undefined);
+    const result = await testConnection(domain);
 
     if (!result.success) {
       toast.style = Toast.Style.Failure;
@@ -215,7 +261,6 @@ function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
 
     await addWebsite({
       domain,
-      apiKey: values.apiKey || undefined,
       label: values.label || undefined,
     });
 
@@ -244,18 +289,13 @@ function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
         error={domainError}
         onChange={() => setDomainError(undefined)}
       />
-      <Form.PasswordField
-        id="apiKey"
-        title="API Key"
-        placeholder="sa_api_key_..."
-        info="Optional. Required only for private websites. Get it from simpleanalytics.com/account"
-      />
       <Form.TextField
         id="label"
         title="Label"
         placeholder="My Website"
         info="Optional. A friendly name to identify this website"
       />
+      <Form.Description text="For private websites, set your API Key in extension preferences." />
     </Form>
   );
 }
@@ -270,7 +310,7 @@ function EditWebsiteForm({ website, onSuccess }: EditWebsiteFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [domainError, setDomainError] = useState<string | undefined>();
 
-  async function handleSubmit(values: { domain: string; apiKey: string; label: string }) {
+  async function handleSubmit(values: { domain: string; label: string }) {
     const domain = values.domain
       .trim()
       .toLowerCase()
@@ -284,13 +324,13 @@ function EditWebsiteForm({ website, onSuccess }: EditWebsiteFormProps) {
 
     setIsLoading(true);
 
-    if (domain !== website.domain || values.apiKey !== (website.apiKey || "")) {
+    if (domain !== website.domain) {
       const toast = await showToast({
         style: Toast.Style.Animated,
         title: "Testing connection...",
       });
 
-      const result = await testConnection(domain, values.apiKey || undefined);
+      const result = await testConnection(domain);
 
       if (!result.success) {
         toast.style = Toast.Style.Failure;
@@ -305,7 +345,6 @@ function EditWebsiteForm({ website, onSuccess }: EditWebsiteFormProps) {
 
     await updateWebsite(website.id, {
       domain,
-      apiKey: values.apiKey || undefined,
       label: values.label || undefined,
     });
 
@@ -334,13 +373,6 @@ function EditWebsiteForm({ website, onSuccess }: EditWebsiteFormProps) {
         defaultValue={website.domain}
         error={domainError}
         onChange={() => setDomainError(undefined)}
-      />
-      <Form.PasswordField
-        id="apiKey"
-        title="API Key"
-        placeholder="sa_api_key_..."
-        defaultValue={website.apiKey || ""}
-        info="Optional. Required only for private websites."
       />
       <Form.TextField
         id="label"

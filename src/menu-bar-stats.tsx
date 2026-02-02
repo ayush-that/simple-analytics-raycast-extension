@@ -19,22 +19,8 @@ import {
   setActiveWebsiteId,
 } from "./lib/storage";
 import { formatNumber, formatDuration, getTimeRangeLabel, truncatePath } from "./lib/format";
-import { TimeRange, Website, StatsResponse } from "./lib/types";
-
-const Icons = {
-  chartBar: { source: "chart-bar.svg" },
-  user: { source: "user.svg" },
-  eye: { source: "eye.svg" },
-  clock: { source: "clock.svg" },
-  globe: { source: "globe.svg" },
-  calendar: { source: "calendar.svg" },
-  arrowRight: { source: "arrow-right.svg" },
-  refresh: { source: "refresh.svg" },
-  settings: { source: "settings.svg" },
-  plus: { source: "plus.svg" },
-  check: { source: "check.svg" },
-  alertCircle: { source: "alert-circle.svg" },
-};
+import { TimeRange, Website, StatsResponse, Preferences } from "./lib/types";
+import { Icons } from "./lib/icons";
 
 async function loadInitialData() {
   const [websites, activeWebsite, timeRange] = await Promise.all([getWebsites(), getActiveWebsite(), getTimeRange()]);
@@ -66,7 +52,6 @@ export default function MenuBarStats() {
       if (!website) return null;
       return fetchStats({
         domain: website.domain,
-        apiKey: website.apiKey,
         timeRange: range,
       });
     },

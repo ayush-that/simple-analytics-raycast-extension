@@ -11,8 +11,16 @@ export async function getWebsites(): Promise<Website[]> {
     return [];
   }
   try {
-    return JSON.parse(data);
-  } catch {
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) {
+      console.warn("Corrupted websites storage: expected array, clearing data");
+      await LocalStorage.removeItem(WEBSITES_KEY);
+      return [];
+    }
+    return parsed;
+  } catch (error) {
+    console.warn("Corrupted websites storage: invalid JSON, clearing data", error);
+    await LocalStorage.removeItem(WEBSITES_KEY);
     return [];
   }
 }
@@ -108,5 +116,43 @@ export async function setTimeRange(range: TimeRange): Promise<void> {
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return crypto.randomUUID();
+}
+
+export async function importWebsites(domains: string[]): Promise<{ added: number; skipped: number }> {
+  const existingWebsites = await getWebsites();
+  const existingDomains = new Set(existingWebsites.map((w) => w.domain.toLowerCase()));
+  const wasEmpty = existingWebsites.length === 0;
+
+  let added = 0;
+  let skipped = 0;
+  let firstAddedId: string | null = null;
+
+  for (const domain of domains) {
+    const normalizedDomain = domain.toLowerCase();
+    if (existingDomains.has(normalizedDomain)) {
+      skipped++;
+      continue;
+    }
+
+    const newWebsite: Website = {
+      id: generateId(),
+      domain: normalizedDomain,
+    };
+    existingWebsites.push(newWebsite);
+    existingDomains.add(normalizedDomain);
+    added++;
+
+    if (wasEmpty && !firstAddedId) {
+      firstAddedId = newWebsite.id;
+    }
+  }
+
+  await saveWebsites(existingWebsites);
+
+  if (firstAddedId) {
+    await setActiveWebsiteId(firstAddedId);
+  }
+
+  return { added, skipped };
 }

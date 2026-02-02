@@ -69,6 +69,22 @@
           "value": "30d"
         }
       ]
+    },
+    {
+      "name": "apiKey",
+      "title": "API Key",
+      "description": "Your Simple Analytics API key. Find it at simpleanalytics.com/account",
+      "type": "password",
+      "required": false,
+      "placeholder": "sa_api_key_..."
+    },
+    {
+      "name": "userId",
+      "title": "User ID",
+      "description": "Your Simple Analytics User ID. Required for importing websites. Find it at simpleanalytics.com/account",
+      "type": "password",
+      "required": false,
+      "placeholder": "sa_user_id_..."
     }
   ],
   "dependencies": {
